@@ -1,493 +1,279 @@
-LSST–LISA DWD Candidate Analysis
-================================
+# LSST–LISA Double White-Dwarf Candidate Analysis
 
-Overview
---------
-This script identifies and characterizes potential optical counterparts to LISA
-double white dwarf (DWD) sources using an LSST white-dwarf catalogue.
+This repository contains the analysis pipeline used to identify and characterize potential LSST optical counterparts to LISA double white-dwarf (DWD) sources. The analysis combines simulated LISA DWD catalogues with an LSST white-dwarf catalogue, evaluates source localization and optical properties, and applies logistic-regression models to assess candidate-selection performance.
 
-The analysis:
+## Input Catalogues
 
-1. Loads LISA DWD and LSST white-dwarf catalogues.
-2. Applies a proper-motion cut to the LSST white-dwarf sample.
-3. Counts LSST white dwarfs within each LISA sky-localization region.
-4. Defines LISA–LSST candidate samples using:
-      - LISA localization crowding, N_nearby;
-      - an r-band magnitude limit;
-      - LSST sky coverage.
-5. Produces sky maps and diagnostic plots.
-6. Quantifies variation across multiple r-band magnitude realizations.
-7. Performs repeated logistic-regression validation using physically motivated
-   LISA source parameters.
+Place the input catalogues in the same directory as the analysis script.
 
-The script is intended to produce publication-quality figures and summary
-statistics.
+### Required Files
 
+- `LISA_source.csv`  
+  Catalogue of simulated LISA double white-dwarf sources.
 
-Required Input Files
---------------------
-The analysis normally requires the following files in the working directory:
+- `LSST_WD_24.csv`  
+  LSST white-dwarf catalogue limited to apparent magnitude \(r < 24\).
 
-    LISA_source.csv
-    LSST_WD_24.csv
+### Optional Precomputed File
 
-An optional precomputed catalogue may also be used:
+- `LISA_LSST_source.csv`  
+  Precomputed LISA–LSST cross-match catalogue. When available, this file can include the `uncertainty_count` column, which stores the number of LSST white dwarfs within the localization region of each LISA source.
 
-    LISA_LSST_source.csv
+If this file is not available, the analysis calculates the required nearby-source counts from the LISA localization area and LSST sky positions.
 
-The precomputed catalogue is useful when the LSST white-dwarf catalogue is not
-available or when recalculating the localization-region source counts is not
-required.
+## Required Catalogue Columns
 
+### LISA Catalogue
 
-Input Catalogue Requirements
-----------------------------
+The LISA source catalogue should provide the following columns:
 
-LISA_source.csv
-~~~~~~~~~~~~~~~
-Required columns:
+```text
+dist_new_kpc
+delta_omega
+chirp_masses
+fmin
+snr
+galb
+gall
+```
 
-    umag
-    gmag
-    rmag
-    imag
-    zmag
-    ymag
-    l
-    b
-    dist_new_kpc
-    delta_omega
-    chirp_masses
-    fmin
-    snr
-    rmag_0, rmag_1, ..., rmag_99
+where:
 
-Column meanings:
+- `dist_new_kpc` is the source distance in kpc.
+- `delta_omega` is the LISA sky-localization solid angle.
+- `chirp_masses` is the binary chirp mass.
+- `fmin` is the gravitational-wave frequency.
+- `snr` is the LISA signal-to-noise ratio.
+- `galb` and `gall` are Galactic latitude and longitude.
 
-    l
-        Galactic longitude in degrees.
+### LSST White-Dwarf Catalogue
 
-    b
-        Galactic latitude in degrees.
+The LSST catalogue should contain photometric, positional, and proper-motion information, including:
 
-    dist_new_kpc
-        Heliocentric distance in kpc.
+```text
+umag
+gmag
+rmag
+imag
+zmag
+ymag
+l
+b
+pmdec
+pmracosd
+rmag_0, rmag_1, ..., rmag_99
+```
 
-    delta_omega
-        LISA sky-localization solid angle, assumed to be in steradians.
+The columns `rmag_0` through `rmag_99` are magnitude realizations used to evaluate the effect of photometric variation on candidate counts.
 
-    chirp_masses
-        Chirp mass in solar masses.
+## Software Requirements
 
-    fmin
-        Initial or minimum gravitational-wave frequency in Hz.
+The analysis requires Python 3 and the following packages:
 
-    snr
-        LISA signal-to-noise ratio.
+```text
+numpy
+pandas
+matplotlib
+seaborn
+scipy
+scikit-learn
+astropy
+healpy
+```
 
-    rmag_0 ... rmag_99
-        Independent realizations of the LSST r-band magnitude.
+They can be installed with:
 
+```bash
+pip install numpy pandas matplotlib seaborn scipy scikit-learn astropy healpy
+```
 
-LISA_LSST_source.csv
-~~~~~~~~~~~~~~~~~~~~
-Optional precomputed version of the LISA catalogue. It should contain all
-columns required from LISA_source.csv, together with:
+## Running the Analysis
 
-    uncertainty_count
+Place the catalogues and the Python analysis script in the same directory, then run:
 
-Column meaning:
+```bash
+python lsst_lisa_dwd_analysis.py
+```
 
-    uncertainty_count
-        Number of LSST white dwarfs within the equivalent circular
-        sky-localization region of each LISA source.
+Update the script filename in the command above if your local script uses a different name.
 
-This file may be used to avoid recalculating BallTree localization counts.
-Its row order must remain identical to that of the corresponding LISA source
-catalogue.
+## Candidate Selection
 
-Note that LSST_WD_24.csv is still required to reproduce the LSST sky map and
-the HEALPix-based visibility mask.
+The analysis identifies LSST white dwarfs located within the LISA localization regions. For each LISA source, the number of nearby LSST white dwarfs is denoted by `N_nearby`.
 
+Two candidate samples are considered:
 
-LSST_WD_24.csv
-~~~~~~~~~~~~~~
-Required columns:
+- **Low-confusion sample:** `N_nearby <= 10`
+- **Intermediate-confusion sample:** `10 < N_nearby <= 100`
 
-    galb
-    gall
-    pmdec
-    pmracosd
+These samples are mutually exclusive. In particular, the intermediate-confusion sample does not include sources in the low-confusion sample.
 
-Column meanings:
+The analysis also applies magnitude and proper-motion selection criteria. The default configuration uses:
 
-    galb
-        Galactic latitude in degrees.
+```text
+PM_LIMIT = 3.0
+RMAG_LIMIT = 24.0
+```
 
-    gall
-        Galactic longitude in degrees.
+where `PM_LIMIT` is the proper-motion threshold and `RMAG_LIMIT` is the limiting LSST `r`-band magnitude.
 
-    pmdec
-        Proper motion in declination.
+## Sky Localization
 
-    pmracosd
-        Proper motion in right ascension multiplied by cos(declination).
+LISA localization regions are calculated from the solid-angle uncertainty `delta_omega`. The equivalent angular radius, `delta_theta`, is derived from:
 
-The total proper motion is calculated as:
+```text
+delta_theta = arccos(1 - delta_omega / (2 pi))
+```
 
-    pm = sqrt(pmdec^2 + pmracosd^2)
+The argument of `arccos` is clipped to the valid interval `[-1, 1]` to avoid numerical errors.
 
+Nearby LSST sources are counted using a `BallTree` with the haversine metric, which is appropriate for angular separations on the sky.
 
-Software Requirements
----------------------
-The code requires Python 3 and the following packages:
+## Photometric Realizations
 
-    numpy
-    pandas
-    matplotlib
-    healpy
-    scikit-learn
-    tqdm
+The catalogue may include multiple `r`-band realizations:
 
-Recommended installation:
+```text
+rmag_0, rmag_1, ..., rmag_99
+```
 
-    pip install numpy pandas matplotlib healpy scikit-learn tqdm
+The analysis evaluates candidate counts across these realizations to quantify the dependence of candidate selection on photometric variation.
 
+The displayed realization is controlled by:
 
-Main Configuration Parameters
------------------------------
-The configuration section near the top of the script contains the main
-analysis settings.
+```python
+DISPLAY_RMAG_COLUMN = "rmag_48"
+```
 
-Input files:
+The number of available realizations is specified by:
 
-    LISA_FILE = "LISA_source.csv"
-    LSST_FILE = "LSST_WD_24.csv"
+```python
+N_RMAG_REALIZATIONS = 100
+```
 
-Selection thresholds:
+## Machine-Learning Analysis
 
-    PM_LIMIT = 3.0
-        Minimum LSST proper motion.
+Logistic-regression models are used to assess the separability of candidate populations.
 
-    RMAG_LIMIT = 24.0
-        LSST r-band magnitude limit used for candidate selection.
+Two feature configurations are evaluated.
 
-    DISPLAY_RMAG_COLUMN = "rmag_48"
-        Specific r-band realization used for displayed candidate plots.
+### `mass_distance`
 
-    N_NEARBY_VALUES = (10, 100)
-        Maximum allowed numbers of LSST white dwarfs within a LISA
-        sky-localization region.
+This model uses:
 
-HEALPix map configuration:
+```text
+chirp mass
+distance
+```
 
-    HEALPIX_BIN_SIZE_DEG = 0.6
-        Approximate angular scale of the HEALPix sky map.
+It tests how well the basic physical properties of a LISA DWD predict candidate selection.
 
-Figure output:
+### `log_all_parameters`
 
-    FIG_DPI = 300
-        Resolution used when saving figures.
+This model uses logarithmic physical parameters, including:
 
-Machine-learning configuration:
+```text
+chirp mass
+distance
+frequency
+signal-to-noise ratio
+sky-localization uncertainty
+Galactic longitude
+Galactic latitude
+```
 
-    THRESHOLD = 0.50
-        Classification probability threshold.
+The precise set of variables is defined in the analysis script.
 
-    DEGREE = 2
-        Polynomial degree used in logistic regression.
+### Feature Scaling
 
-    C_VALUE = 1.0
-        Inverse regularization strength in LogisticRegression.
+`StandardScaler` is intentionally not applied.
 
-    TEST_SIZE = 0.30
-        Fraction of each realization reserved for validation.
+The input variables retain their physical or logarithmic scales so that the logistic-regression coefficients remain physically interpretable.
 
-    N_REPEATS = 100
-        Number of repeated stratified train/test splits.
+### Model Evaluation
 
-    N_RMAG_REALIZATIONS = 100
-        Number of r-band magnitude realizations.
+The analysis reports precision and recall for:
 
+- The training data.
+- The validation data.
+- The full data set.
 
-Candidate Definitions
----------------------
+It also evaluates model performance over a range of probability thresholds:
 
-LSST visibility mask
-~~~~~~~~~~~~~~~~~~~~
-A LISA source is classified as visible when its HEALPix pixel contains at least
-one LSST white dwarf after applying the proper-motion selection:
+```python
+THRESHOLDS = np.linspace(0.01, 0.99, 100)
+```
 
-    visible_mask = pixel_counts[lisa_pixels] > 0
+The default classification threshold is:
 
+```python
+THRESHOLD = 0.50
+```
 
-Localization crowding
-~~~~~~~~~~~~~~~~~~~~~
-For every LISA source, the script counts the number of LSST white dwarfs within
-the equivalent circular LISA sky-localization region.
+## Default Configuration
 
-The angular radius is derived from the localization solid angle:
+| Parameter | Default value | Description |
+|---|---:|---|
+| `PM_LIMIT` | `3.0` | Proper-motion selection limit |
+| `RMAG_LIMIT` | `24.0` | LSST limiting `r`-band magnitude |
+| `DISPLAY_RMAG_COLUMN` | `"rmag_48"` | Magnitude realization used in displayed figures |
+| `N_RMAG_REALIZATIONS` | `100` | Number of `r`-band realizations |
+| `N_NEARBY_VALUES` | `(10, 100)` | Nearby-source thresholds |
+| `HEALPIX_BIN_SIZE_DEG` | `0.6` | Approximate HEALPix sky-bin size in degrees |
+| `FIG_DPI` | `300` | Figure resolution |
+| `THRESHOLD` | `0.50` | Logistic-regression classification threshold |
+| `THRESHOLDS` | `0.01`–`0.99` | Threshold range for precision–recall curves |
+| `DEGREE` | `2` | Polynomial-feature degree |
+| `C_VALUE` | `1.0` | Logistic-regression inverse regularization strength |
+| `TEST_SIZE` | `0.30` | Validation-set fraction |
+| `N_REPEATS` | `100` | Number of repeated model evaluations |
+| `RANDOM_STATE` | `42` | Random seed for reproducibility |
 
-    delta_theta = arccos(1 - delta_omega / (2*pi))
+## Output Figures
 
-where delta_omega is assumed to be in steradians.
+The pipeline generates publication-quality PDF figures:
 
-The resulting number of nearby LSST white dwarfs is stored as:
-
-    uncertainty_count
-
-and is denoted in figures as:
-
-    N_nearby
-
-
-Candidate sample with N_nearby <= 10
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The low-crowding candidate sample is defined by:
-
-    visible_mask
-    AND uncertainty_count <= 10
-    AND rmag <= 24
-
-
-Candidate sample with 10 < N_nearby <= 100
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The intermediate-crowding candidate sample is defined by:
-
-    visible_mask
-    AND 10 < uncertainty_count <= 100
-    AND rmag <= 24
-
-
-Candidate sample with N_nearby <= 100
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-This sample includes both the low- and intermediate-crowding candidates:
-
-    visible_mask
-    AND uncertainty_count <= 100
-    AND rmag <= 24
-
-
-Output Files
-------------
-
+```text
 LSST_WD.pdf
-~~~~~~~~~~~
-Aitoff projection of the LSST white-dwarf distribution after the proper-motion
-cut. The colour scale shows the number of white dwarfs per HEALPix pixel.
-
 LSST_LISA_DWDs.pdf
-~~~~~~~~~~~~~~~~~~
-Aitoff sky map of the LSST white-dwarf distribution with candidate LISA DWDs
-overlaid.
-
-Marker colours:
-
-    Red:
-        N_nearby <= 10
-
-    Purple:
-        10 < N_nearby <= 100
-
-
 candidate_count_distribution_N10.pdf
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Histogram of the candidate count across the 100 r-band magnitude realizations
-for the N_nearby <= 10 selection.
-
 candidate_count_distribution_N100.pdf
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Histogram of the candidate count across the 100 r-band magnitude realizations
-for the N_nearby <= 100 selection.
-
-
 SNR_rmag_and_uncertainties_WDs.pdf
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Two-panel diagnostic figure:
-
-    Panel (a):
-        LISA SNR versus N_nearby.
-
-    Panel (b):
-        LISA SNR versus r-band magnitude for the N_nearby <= 10 and
-        10 < N_nearby <= 100 samples.
-
-
 distance_histogram.pdf
-~~~~~~~~~~~~~~~~~~~~~~
-Distance distributions for sources satisfying N_nearby <= 10 and
-N_nearby <= 100.
-
-The left panel has no magnitude cut. The right panel applies r <= 24.
-
-
 d_vs_M_candidates.pdf
-~~~~~~~~~~~~~~~~~~~~~
-Heliocentric distance versus chirp mass for visible LISA sources and selected
-LISA–LSST candidates.
-
-The left panel shows the N_nearby <= 10 sample.
-
-The right panel shows the N_nearby <= 100 sample.
-
-
 pairwise_params.pdf
-~~~~~~~~~~~~~~~~~~~
-Pairwise distributions of LISA physical parameters:
-
-    Heliocentric distance
-    Localization area
-    Gravitational-wave frequency
-    Chirp mass
-
-Grey points represent other visible sources. Red and purple points represent
-the low- and intermediate-crowding candidate samples, respectively.
-
-
 recall_precision_mass_distance.pdf
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Repeated-validation logistic-regression results using:
-
-    Chirp mass
-    Heliocentric distance
-
-The model is trained separately for N_nearby <= 10 and N_nearby <= 100.
-
-
 recall_precision_all_parameters.pdf
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Repeated-validation logistic-regression results using:
+```
 
-    log10(delta_omega)
-    log10(fmin)
-    log10(distance)
-    log10(chirp mass)
+### Figure Descriptions
 
-The model predicts candidate membership among all visible sources.
+| File | Description |
+|---|---|
+| `LSST_WD.pdf` | HEALPix map of the LSST white-dwarf distribution. |
+| `LSST_LISA_DWDs.pdf` | Sky distribution of LISA DWDs and LSST candidate samples. |
+| `candidate_count_distribution_N10.pdf` | Candidate-count distribution for `N_nearby <= 10`. |
+| `candidate_count_distribution_N100.pdf` | Candidate-count distribution for `10 < N_nearby <= 100`. |
+| `SNR_rmag_and_uncertainties_WDs.pdf` | LISA signal-to-noise ratio, LSST magnitude, and localization diagnostics. |
+| `distance_histogram.pdf` | Distance distributions for LISA DWDs and selected candidates. |
+| `d_vs_M_candidates.pdf` | Chirp-mass versus distance distribution. |
+| `pairwise_params.pdf` | Pairwise relationships among selected physical parameters. |
+| `recall_precision_mass_distance.pdf` | Precision–recall results for the `mass_distance` model. |
+| `recall_precision_all_parameters.pdf` | Precision–recall results for the `log_all_parameters` model. |
 
+## Notes
 
-Machine-Learning Analysis
--------------------------
+- HEALPix map values represent the number of white dwarfs per HEALPix pixel. They are not sky number densities unless explicitly normalized by pixel area.
+- Candidate markers are overlaid on relevant sky and parameter-space figures.
+- The `N_nearby <= 10` and `10 < N_nearby <= 100` samples are separate, non-overlapping populations.
+- All output figures are saved at the resolution specified by `FIG_DPI`.
 
-Purpose
-~~~~~~~
-The logistic-regression analysis tests whether LISA source properties predict
-membership in the optically detectable candidate sample.
+## Reproducibility
 
-Each r-band magnitude realization produces a separate binary classification
-target:
+For reproducible machine-learning splits and repeated analyses, the default random seed is:
 
-    y = 1  if rmag_i <= 24
-    y = 0  otherwise
+```python
+RANDOM_STATE = 42
+```
 
-within the applicable N_nearby selection.
-
-
-Feature Sets
-~~~~~~~~~~~~
-
-1. mass_distance
-----------------
-
-Features:
-
-    m = chirp_masses
-    d = heliocentric distance
-
-This model is evaluated only within the selected N_nearby sample.
-
-
-2. log_all_parameters
----------------------
-
-Features:
-
-    log_delta_omega = log10(delta_omega)
-    log_fmin        = log10(fmin)
-    log_d           = log10(distance)
-    log_chirp_mass  = log10(chirp mass)
-
-This model is evaluated over all visible sources, while the target remains the
-candidate selection for the relevant N_nearby threshold.
-
-
-Polynomial Logistic Regression
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The model pipeline is:
-
-    PolynomialFeatures(degree=2, include_bias=False)
-    LogisticRegression(...)
-
-No StandardScaler is used intentionally. This preserves the direct association
-between fitted coefficients and the adopted physical variables or logarithmic
-physical variables.
-
-Because the features are not standardized, coefficient magnitudes should not
-be compared directly between variables with different units or numerical
-ranges without physical context.
-
-
-Validation Procedure
-~~~~~~~~~~~~~~~~~~~~
-For every r-band magnitude realization:
-
-    1. Stratified train/test splits are generated.
-    2. The model is fit to the training subset.
-    3. Predictions are evaluated for training, validation, and full samples.
-    4. Precision, recall, ROC-AUC, average precision, and predicted source
-       counts are recorded.
-    5. Results are averaged over all successful fits.
-
-The script uses:
-
-    100 magnitude realizations
-    100 repeated stratified splits per realization
-    30% validation fraction
-
-This corresponds to up to 10,000 fits for each N_nearby threshold and feature
-set.
-
-
-Notes and Assumptions
----------------------
-
-1. The LISA localization area, delta_omega, is assumed to be expressed in
-   steradians.
-
-2. The equivalent circular localization radius is an approximation used to
-   define a search region for LSST white dwarfs.
-
-3. The HEALPix map is used to identify whether a source lies in a sky pixel
-   containing at least one LSST white dwarf. This is not equivalent to a full
-   LSST footprint or completeness model.
-
-4. The label "White dwarfs per HEALPix pixel" represents source counts per
-   HEALPix pixel, not a continuous surface density in units of deg^-2.
-
-5. The rmag_0 to rmag_99 columns are treated as independent realizations of
-   the apparent r-band magnitude.
-
-6. If a candidate sample contains no sources for a given realization, the
-   corresponding SNR fraction is recorded as NaN and ignored when calculating
-   the mean fraction.
-
-7. Logistic-regression performance can be sensitive to class imbalance,
-   especially for rare candidate classes. Precision, recall, ROC-AUC, and
-   average precision should therefore be interpreted together.
-
-
-Suggested Execution
--------------------
-Run the complete script from the directory containing the required catalogues:
-
-    python lsst_lisa_dwd_analysis.py
-
-The PDF figures are written to the working directory unless the output paths
-are changed in the configuration section.
-
-
-Citation and Acknowledgement
-----------------------------
-If this code is used in a publication, cite the relevant LISA, LSST/Rubin
-Observatory, HEALPix, scikit-learn, NumPy, Pandas, Matplotlib, and BallTree
-references, as appropriate for the data products and methods used.
+Changing this value alters the train-validation split and may change the reported classification metrics.
