@@ -20,15 +20,24 @@ The analysis:
 7. Performs repeated logistic-regression validation using physically motivated
    LISA source parameters.
 
-The script is intended for publication-quality figures and summary statistics.
+The script is intended to produce publication-quality figures and summary
+statistics.
 
 
 Required Input Files
 --------------------
-The script expects the following CSV files in the working directory:
+The analysis normally requires the following files in the working directory:
 
     LISA_source.csv
     LSST_WD_24.csv
+
+An optional precomputed catalogue may also be used:
+
+    LISA_LSST_source.csv
+
+The precomputed catalogue is useful when the LSST white-dwarf catalogue is not
+available or when recalculating the localization-region source counts is not
+required.
 
 
 Input Catalogue Requirements
@@ -78,6 +87,27 @@ Column meanings:
 
     rmag_0 ... rmag_99
         Independent realizations of the LSST r-band magnitude.
+
+
+LISA_LSST_source.csv
+~~~~~~~~~~~~~~~~~~~~
+Optional precomputed version of the LISA catalogue. It should contain all
+columns required from LISA_source.csv, together with:
+
+    uncertainty_count
+
+Column meaning:
+
+    uncertainty_count
+        Number of LSST white dwarfs within the equivalent circular
+        sky-localization region of each LISA source.
+
+This file may be used to avoid recalculating BallTree localization counts.
+Its row order must remain identical to that of the corresponding LISA source
+catalogue.
+
+Note that LSST_WD_24.csv is still required to reproduce the LSST sky map and
+the HEALPix-based visibility mask.
 
 
 LSST_WD_24.csv
@@ -146,8 +176,8 @@ Selection thresholds:
         Specific r-band realization used for displayed candidate plots.
 
     N_NEARBY_VALUES = (10, 100)
-        Maximum allowed number of LSST white dwarfs inside a LISA localization
-        region for the two candidate selections.
+        Maximum allowed numbers of LSST white dwarfs within a LISA
+        sky-localization region.
 
 HEALPix map configuration:
 
@@ -186,7 +216,7 @@ Candidate Definitions
 LSST visibility mask
 ~~~~~~~~~~~~~~~~~~~~
 A LISA source is classified as visible when its HEALPix pixel contains at least
-one LSST white dwarf after the proper-motion selection:
+one LSST white dwarf after applying the proper-motion selection:
 
     visible_mask = pixel_counts[lisa_pixels] > 0
 
@@ -202,7 +232,7 @@ The angular radius is derived from the localization solid angle:
 
 where delta_omega is assumed to be in steradians.
 
-The number of nearby LSST sources is stored as:
+The resulting number of nearby LSST white dwarfs is stored as:
 
     uncertainty_count
 
@@ -213,7 +243,7 @@ and is denoted in figures as:
 
 Candidate sample with N_nearby <= 10
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-This is the lower-crowding candidate sample:
+The low-crowding candidate sample is defined by:
 
     visible_mask
     AND uncertainty_count <= 10
@@ -222,7 +252,7 @@ This is the lower-crowding candidate sample:
 
 Candidate sample with 10 < N_nearby <= 100
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-This is the intermediate-crowding sample:
+The intermediate-crowding candidate sample is defined by:
 
     visible_mask
     AND 10 < uncertainty_count <= 100
@@ -231,7 +261,7 @@ This is the intermediate-crowding sample:
 
 Candidate sample with N_nearby <= 100
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-This includes both the low- and intermediate-crowding samples:
+This sample includes both the low- and intermediate-crowding candidates:
 
     visible_mask
     AND uncertainty_count <= 100
@@ -285,13 +315,8 @@ Two-panel diagnostic figure:
 
 distance_histogram.pdf
 ~~~~~~~~~~~~~~~~~~~~~~
-Distance distributions for sources satisfying:
-
-    N_nearby <= 10
-
-and:
-
-    N_nearby <= 100
+Distance distributions for sources satisfying N_nearby <= 10 and
+N_nearby <= 100.
 
 The left panel has no magnitude cut. The right panel applies r <= 24.
 
@@ -316,7 +341,7 @@ Pairwise distributions of LISA physical parameters:
     Chirp mass
 
 Grey points represent other visible sources. Red and purple points represent
-the two candidate classes.
+the low- and intermediate-crowding candidate samples, respectively.
 
 
 recall_precision_mass_distance.pdf
@@ -346,8 +371,8 @@ Machine-Learning Analysis
 
 Purpose
 ~~~~~~~
-The logistic-regression analysis tests whether LISA source properties can
-predict membership in the optically detectable candidate sample.
+The logistic-regression analysis tests whether LISA source properties predict
+membership in the optically detectable candidate sample.
 
 Each r-band magnitude realization produces a separate binary classification
 target:
@@ -393,16 +418,13 @@ The model pipeline is:
     PolynomialFeatures(degree=2, include_bias=False)
     LogisticRegression(...)
 
-No StandardScaler is used intentionally.
-
-This choice preserves the direct association between the fitted coefficients
-and the adopted physical variables or logarithmic physical variables. As a
-result, the printed logistic-regression equation remains interpretable in terms
-of the stated input quantities.
+No StandardScaler is used intentionally. This preserves the direct association
+between fitted coefficients and the adopted physical variables or logarithmic
+physical variables.
 
 Because the features are not standardized, coefficient magnitudes should not
-be compared between variables with different units or numerical ranges without
-careful physical interpretation.
+be compared directly between variables with different units or numerical
+ranges without physical context.
 
 
 Validation Procedure
@@ -432,12 +454,12 @@ Notes and Assumptions
 1. The LISA localization area, delta_omega, is assumed to be expressed in
    steradians.
 
-2. The equivalent circular localization radius is an approximation. It is used
-   only to define a search region for LSST white dwarfs.
+2. The equivalent circular localization radius is an approximation used to
+   define a search region for LSST white dwarfs.
 
 3. The HEALPix map is used to identify whether a source lies in a sky pixel
    containing at least one LSST white dwarf. This is not equivalent to a full
-   LSST footprint model.
+   LSST footprint or completeness model.
 
 4. The label "White dwarfs per HEALPix pixel" represents source counts per
    HEALPix pixel, not a continuous surface density in units of deg^-2.
@@ -446,8 +468,8 @@ Notes and Assumptions
    the apparent r-band magnitude.
 
 6. If a candidate sample contains no sources for a given realization, the
-   corresponding SNR fraction is recorded as NaN and ignored in the reported
-   mean fraction.
+   corresponding SNR fraction is recorded as NaN and ignored when calculating
+   the mean fraction.
 
 7. Logistic-regression performance can be sensitive to class imbalance,
    especially for rare candidate classes. Precision, recall, ROC-AUC, and
@@ -456,16 +478,16 @@ Notes and Assumptions
 
 Suggested Execution
 -------------------
-Run the complete script from the directory containing both input catalogues:
+Run the complete script from the directory containing the required catalogues:
 
     python lsst_lisa_dwd_analysis.py
 
-The PDF figures will be written to the same directory unless file paths are
-changed in the configuration section.
+The PDF figures are written to the working directory unless the output paths
+are changed in the configuration section.
 
 
-Citation / Acknowledgement
---------------------------
+Citation and Acknowledgement
+----------------------------
 If this code is used in a publication, cite the relevant LISA, LSST/Rubin
 Observatory, HEALPix, scikit-learn, NumPy, Pandas, Matplotlib, and BallTree
-references as appropriate for the analysis and data products used.
+references, as appropriate for the data products and methods used.
