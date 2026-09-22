@@ -1,1 +1,1 @@
-Please down load your own LSST data from NOIR Astrolab!
+Please download your own LSST data from NOIR Astrolab!
