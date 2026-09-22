@@ -12,7 +12,7 @@ Place the input catalogues in the same directory as the analysis script.
   Catalogue of simulated LISA double white-dwarf sources.
 
 - `LSST_WD_24.csv`  
-  LSST white-dwarf catalogue limited to apparent magnitude \(r < 24\).
+  LSST white-dwarf catalogue limited to apparent magnitude \(r ≤ 24\).
 
 ### Optional Precomputed File
 
