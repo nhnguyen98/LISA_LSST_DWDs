@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import astropy.units as u
+from matplotlib.ticker import FuncFormatter, LogLocator
 from matplotlib.colors import LogNorm
 from sklearn.base import clone
 from sklearn.linear_model import LogisticRegression
@@ -79,13 +80,6 @@ def save_figure(fig, filename):
     fig.savefig(filename, dpi=FIG_DPI, bbox_inches="tight", pad_inches=0.02)
 
 
-def print_candidate_summary(data, mask, label):
-    """Print the number of candidates and the fraction with SNR >= 100."""
-    n_candidates = int(mask.sum())
-    high_snr_fraction = 100.0 * data.loc[mask, "SNR"].ge(100).mean() if n_candidates else np.nan
-    print(f"{label}: {n_candidates:,} candidates; {high_snr_fraction:.0f}% with SNR ≥ 100.")
-
-
 # =============================================================================
 # Load and prepare catalogues
 # =============================================================================
@@ -139,7 +133,7 @@ lisa["uncertainty_count"] = tree.query_radius(
 
 print(
     "Median number of LSST white dwarfs within a LISA localization region: "
-    f"{lisa['uncertainty_count'].median():.0f}"
+    f"{lisa['uncertainty_count'].median():,.0f}"
 )
 
 
@@ -228,8 +222,8 @@ candidate_mask_10 = sky_mask_10 & magnitude_mask
 candidate_mask_100 = sky_mask_100 & magnitude_mask
 candidate_mask_10_100 = sky_mask_10_100 & magnitude_mask
 
-print_candidate_summary(lisa, candidate_mask_10, r"$N_\mathrm{nearby} \leq 10$")
-print_candidate_summary(lisa, candidate_mask_10_100, r"$10 < N_\mathrm{nearby} \leq 100$")
+print(f"N_nearby ≤  10: {int(candidate_mask_10.sum()):,} candidates; {100.0 * lisa.loc[candidate_mask_10, 'SNR'].ge(100).mean():.0f}% with SNR ≥ 100.")
+print(f"N_nearby ≤  100: {int(candidate_mask_100.sum()):,} candidates; {100.0 * lisa.loc[candidate_mask_100, 'SNR'].ge(100).mean():.0f}% with SNR ≥ 100.")
 
 
 # =============================================================================
@@ -273,7 +267,7 @@ ax.set_yticklabels([f"{value}°" for value in yticks], fontsize=8)
 
 ax.grid(alpha=0.35, linestyle="--", linewidth=0.5)
 ax.set_title("LSST–LISA DWD candidates", pad=18)
-ax.legend(loc="lower center", bbox_to_anchor=(0.5, -0.18), ncol=2, frameon=False)
+ax.legend(loc="lower center", bbox_to_anchor=(0.5, -0.18), ncol=2, frameon=False, markerscale=2)
 
 colorbar = fig.colorbar(image, ax=ax, pad=0.02, shrink=0.65, aspect=18)
 colorbar.set_label("White dwarfs per HEALPix pixel")
@@ -367,7 +361,7 @@ axes[1].scatter(
     lisa.loc[sky_mask_10, DISPLAY_RMAG_COLUMN],
     lisa.loc[sky_mask_10, "SNR"],
     s=8,
-    alpha=0.35,
+    alpha=0.4,
     linewidths=0,
     color="tab:orange",
     label=r"$N_{\rm nearby} \leq 10$",
@@ -504,14 +498,18 @@ plt.show()
 # =============================================================================
 # Pairwise LISA parameter distributions
 # =============================================================================
-lisa["delta_omega_deg2"] = lisa["delta_omega"] * (180.0 / np.pi) ** 2
+def pairwise_values(mask, column):
+    values = lisa.loc[mask, column]
+    return values / 0.1 if column == "chirp_masses" else values
 
-parameters = ["d", "delta_omega_deg2", "fmin", "chirp_masses"]
+lisa["delta_omega_deg2"] = lisa["delta_omega"] * (180.0 / np.pi) ** 2
+lisa["chirp_masses_10"] = lisa["chirp_masses"] * 10
+parameters = ["d", "delta_omega_deg2", "fmin", "chirp_masses_10"]
 parameter_labels = {
     "d": "Heliocentric distance (kpc)",
     "delta_omega_deg2": r"$\Delta\Omega$ (deg$^2$)",
     "fmin": r"$f_0$ (Hz)",
-    "chirp_masses": r"Chirp mass ($M_\odot$)",
+    "chirp_masses_10": r"Chirp mass ($10^{-1}M_\odot$)",
 }
 
 background_mask = visible_mask & ~(candidate_mask_10 | candidate_mask_10_100)
@@ -519,6 +517,10 @@ pairs = list(itertools.combinations(parameters, 2))
 
 ncols = 3
 nrows = int(np.ceil(len(pairs) / ncols))
+
+log_tick_formatter = FuncFormatter(
+    lambda value, _: f"{value:g}" if value > 0 else ""
+)
 
 fig, axes = plt.subplots(
     nrows,
@@ -539,7 +541,7 @@ for index, (x_name, y_name) in enumerate(pairs):
         color="0.5",
         linewidths=0,
         rasterized=True,
-        label="Dim and clustered sources",
+        label="Dim or clustered sources",
     )
 
     ax.scatter(
@@ -547,10 +549,10 @@ for index, (x_name, y_name) in enumerate(pairs):
         lisa.loc[candidate_mask_10, y_name],
         s=6,
         alpha=0.70,
-        color="tab:red",
+        color="tab:orange",
         linewidths=0,
         rasterized=True,
-        label=r"$N_{\rm nearby} \leq 10$", 
+        label=r"$N_{\rm nearby} \leq 10$",
     )
 
     ax.scatter(
@@ -566,8 +568,22 @@ for index, (x_name, y_name) in enumerate(pairs):
 
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_xlabel(parameter_labels[x_name])
-    ax.set_ylabel(parameter_labels[y_name])
+
+    if x_name == "chirp_masses_10":
+        ax.xaxis.set_major_locator(LogLocator(base=10, subs=(1.0,)))
+        ax.xaxis.set_minor_locator(LogLocator(base=10, subs=np.arange(2, 10,2)))
+        ax.xaxis.set_major_formatter(log_tick_formatter)
+        ax.xaxis.set_minor_formatter(log_tick_formatter)
+        ax.tick_params(axis="x", which="minor", labelsize=9)
+    if y_name == "chirp_masses_10":
+        ax.yaxis.set_major_locator(LogLocator(base=10, subs=(1.0,)))
+        ax.yaxis.set_minor_locator(LogLocator(base=10, subs=np.arange(2, 10,2)))
+        ax.yaxis.set_major_formatter(log_tick_formatter)
+        ax.yaxis.set_minor_formatter(log_tick_formatter)
+        ax.tick_params(axis="y", which="minor", labelsize=9)
+ 
+    ax.set_xlabel(parameter_labels[x_name])   
+    ax.set_ylabel(parameter_labels[y_name])    
     ax.set_title(f"({chr(97 + index)})", loc="left", pad=4)
     ax.grid(alpha=0.25, linestyle=":")
 
@@ -575,7 +591,7 @@ for ax in axes.flat[len(pairs):]:
     ax.remove()
 
 handles, labels = axes.flat[0].get_legend_handles_labels()
-fig.legend(handles, labels, loc="upper center", ncol=3, frameon=False, markerscale=2)
+fig.legend(handles, labels, loc="upper center", ncol=3, frameon=False, markerscale=3)
 fig.subplots_adjust(top=0.89, hspace=0.35, wspace=0.35)
 
 save_figure(fig, "pairwise_params.pdf")
@@ -827,7 +843,7 @@ def print_logistic_equation(model, feature_columns, n_nearby, feature_set):
     feature_names = polynomial.get_feature_names_out(feature_columns)
     coefficients = classifier.coef_[0]
 
-    terms = [f"({classifier.intercept_[0]:.4f})"]
+    terms = [f"({classifier.intercept_[0]:.2f})"]
 
     for name, coefficient in zip(feature_names, coefficients):
         sign = "+" if coefficient >= 0 else "-"
@@ -1053,6 +1069,33 @@ def run_ml_case(data, n_nearby, feature_set, restrict_input_to_selection):
         f"{curve_summary['train_recall_std'][threshold_index]:.2f}"
     )
 
+    print("\n===== Repeated Held-Out Validation =====")
+    print(f"Successful fits: {curve_summary['n_successful_fits']:,}")
+    print(
+        "Mean validation target count: "
+        f"{metrics['n_positive_test'].mean():.0f} ± "
+        f"{metrics['n_positive_test'].std():.0f}"
+    )
+    print(
+        "Validation precision: "
+        f"{curve_summary['test_precision_mean'][threshold_index]:.2f} ± "
+        f"{curve_summary['test_precision_std'][threshold_index]:.2f}"
+    )
+    print(
+        "Validation recall: "
+        f"{curve_summary['test_recall_mean'][threshold_index]:.2f} ± "
+        f"{curve_summary['test_recall_std'][threshold_index]:.2f}"
+    )
+    print(
+        "Validation ROC-AUC: "
+        f"{np.nanmean(metrics['roc_auc']):.2f} ± {np.nanstd(metrics['roc_auc']):.2f}"
+    )
+    print(
+        "Validation average precision: "
+        f"{np.nanmean(metrics['average_precision']):.2f} ± "
+        f"{np.nanstd(metrics['average_precision']):.2f}"
+    )
+
     print(f"\n===== All-Data Predictions (threshold={THRESHOLD:.1f}) =====")
     print(
         "Mean target count: "
@@ -1124,13 +1167,12 @@ for column, n_nearby in enumerate(N_NEARBY_VALUES):
 fig.tight_layout()
 save_figure(fig, "recall_precision_mass_distance.pdf")
 plt.show()
-
+    
 
 # =============================================================================
 # Machine-learning analysis: all logarithmic physical parameters
 # =============================================================================
-"""
-fig, axes = plt.subplots(
+"""fig, axes = plt.subplots(
     nrows=2,
     ncols=len(N_NEARBY_VALUES),
     figsize=(5.0 * len(N_NEARBY_VALUES), 9.5),
@@ -1159,8 +1201,7 @@ for column, n_nearby in enumerate(N_NEARBY_VALUES):
 
 fig.tight_layout()
 save_figure(fig, "recall_precision_all_parameters.pdf")
-plt.show()
-"""
+plt.show()"""
 
 
 # ============================================================================
